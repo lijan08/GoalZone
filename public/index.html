@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GoalZone Football</title>
+<style>
+body{margin:0;background:#071b16;color:white;font-family:Arial,sans-serif}
+header{padding:20px;background:#102820;text-align:center}
+main{max-width:700px;margin:auto;padding:15px}
+button,select,input{padding:12px;border-radius:9px;border:1px solid #315044}
+button{background:#35e08b;color:#071b16;font-weight:bold}
+select,input{background:#102820;color:white}
+.leagues{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.leagues button{background:#17372c;color:white}
+.leagues button.active{background:#35e08b;color:#071b16}
+.card{background:#102820;padding:15px;border-radius:14px;margin:12px 0}
+.match{padding:14px 0;border-bottom:1px solid #315044}
+.teams{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.score{font-size:20px;font-weight:bold;white-space:nowrap}
+.muted{color:#a9c0b5;font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{padding:9px 4px;border-bottom:1px solid #315044;text-align:left}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>⚽ GoalZone Football</h1>
+  <p>Scores • Fixtures • League Tables</p>
+</header>
+
+<main>
+  <div class="card">
+    <h3>লিগ বেছে নাও</h3>
+    <div class="leagues" id="leagues"></div>
+  </div>
+
+  <div class="card">
+    <h3 id="leagueName">Premier League</h3>
+    <p class="muted">ম্যাচের তারিখ</p>
+    <input type="date" id="date">
+    <p>
+      <button onclick="loadMatches()">ম্যাচ দেখো</button>
+      <button onclick="loadTable()">লিগ টেবিল</button>
+    </p>
+    <p id="status" class="muted">ম্যাচ লোড করো।</p>
+  </div>
+
+  <div class="card">
+    <h3>ম্যাচ</h3>
+    <div id="matches">এখানে ম্যাচ দেখা যাবে।</div>
+  </div>
+
+  <div class="card hidden" id="tableCard">
+    <h3>লিগ টেবিল</h3>
+    <div id="table"></div>
+  </div>
+</main>
+
+<script>
+const leagues = [
+  {id:39,name:"Premier League",country:"England"},
+  {id:140,name:"La Liga",country:"Spain"},
+  {id:135,name:"Serie A",country:"Italy"},
+  {id:78,name:"Bundesliga",country:"Germany"},
+  {id:61,name:"Ligue 1",country:"France"},
+  {id:2,name:"Champions League",country:"Europe"},
+  {id:88,name:"Eredivisie",country:"Netherlands"},
+  {id:94,name:"Primeira Liga",country:"Portugal"}
+];
+
+let selected = leagues[0];
+const $ = id => document.getElementById(id);
+
+$("date").value = new Date().toLocaleDateString("en-CA");
+
+leagues.forEach(league => {
+  const button = document.createElement("button");
+  button.textContent = league.name;
+  if (league.id === selected.id) button.classList.add("active");
+
+  button.onclick = () => {
+    selected = league;
+    $("leagueName").textContent = league.name;
+    document.querySelectorAll(".leagues button")
+      .forEach(b => b.classList.remove("active"));
+    button.classList.add("active");
+    loadMatches();
+  };
+
+  $("leagues").appendChild(button);
+});
+
+function seasonYear(date) {
+  const d = new Date(date + "T12:00:00");
+  return d.getMonth() >= 6 ? d.getFullYear() : d.getFullYear() - 1;
+}
+
+/* API key HTML-এ নেই।
+   Backend /api থেকে ডেটা আসবে। */
+async function api(path) {
+  const response = await fetch("/api" + path);
+  const data = await response.json();
+
+  if (!response.ok || data.error) {
+    throw new Error(data.error || "API request ব্যর্থ");
+  }
+  return data;
+}
+
+async function loadMatches() {
+  const date = $("date").value;
+  if (!date) return;
+
+  $("status").textContent = "ম্যাচ লোড হচ্ছে...";
+  $("matches").textContent = "অপেক্ষা করো...";
+
+  try {
+    const data = await api(
+      `/fixtures?league=${selected.id}` +
+      `&date=${encodeURIComponent(date)}` +
+      `&season=${seasonYear(date)}`
+    );
+
+    const matches = data.response || [];
+    $("matches").replaceChildren();
+    $("status").textContent =
+      selected.name + ": " + matches.length + "টি ম্যাচ";
+
+    if (!matches.length) {
+      $("matches").textContent =
+        "এই তারিখে ম্যাচ পাওয়া যায়নি। অন্য তারিখ চেষ্টা করো।";
+      return;
+    }
+
+    matches.forEach(match => {
+      const home = match.teams.home;
+      const away = match.teams.away;
+      const goals = match.goals;
+      const box = document.createElement("div");
+      box.className = "match";
+
+      const names = document.createElement("div");
+      names.className = "teams";
+
+      const homeName = document.createElement("span");
+      homeName.textContent = home.name;
+
+      const score = document.createElement("span");
+      score.className = "score";
+      score.textContent =
+        (goals.home ?? "-") + " : " + (goals.away ?? "-");
+
+      const awayName = document.createElement("span");
+      awayName.textContent = away.name;
+
+      names.append(homeName, score, awayName);
+
+      const info = document.createElement("p");
+      info.className = "muted";
+      info.textContent =
+        match.fixture.status.long + " · " +
+        new Date(match.fixture.date).toLocaleString();
+
+      box.append(names, info);
+      $("matches").appendChild(box);
+    });
+  } catch (error) {
+    $("status").textContent = "সমস্যা: " + error.message;
+    $("matches").textContent =
+      "Backend চালু ও deploy করা আছে কি না পরীক্ষা করো।";
+  }
+}
+
+async function loadTable() {
+  $("tableCard").classList.remove("hidden");
+  $("table").textContent = "টেবিল লোড হচ্ছে...";
+
+  try {
+    const season = seasonYear($("date").value);
+    const data = await api(
+      `/standings?league=${selected.id}&season=${season}`
+    );
+
+    const rows =
+      (data.response?.[0]?.league?.standings || []).flat();
+
+    if (!rows.length) {
+      $("table").textContent = "এই সিজনের টেবিল পাওয়া যায়নি।";
+      return;
+    }
+
+    const table = document.createElement("table");
+    table.innerHTML =
+      "<thead><tr><th>#</th><th>দল</th>" +
+      "<th>MP</th><th>W</th><th>D</th><th>L</th>" +
+      "<th>GD</th><th>PTS</th></tr></thead>";
+
+    const tbody = document.createElement("tbody");
+
+    rows.forEach(row => {
+      const tr = document.createElement("tr");
+      [
+        row.rank, row.team.name, row.all.played,
+        row.all.win, row.all.draw, row.all.lose,
+        row.goalsDiff, row.points
+      ].forEach(value => {
+        const td = document.createElement("td");
+        td.textContent = value ?? "-";
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    $("table").replaceChildren(table);
+  } catch (error) {
+    $("table").textContent = "সমস্যা: " + error.message;
+  }
+}
+</script>
+</body>
+</html
